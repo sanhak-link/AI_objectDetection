@@ -22,10 +22,16 @@ from ultralytics import YOLO
 # ====== 환경 설정 ======
 # Spring Boot 서버 주소 
 BACKEND_BASE = os.getenv("BACKEND_URL", "http://localhost:8080")  # Spring Boot 서버
+
+
+#################### 각자 로컬 환경에 맞게 수정 ####################
 # YOLOv8 .pt 경로 (각자 로컬의 best.pt 파일 경로로 수정)
-MODEL_PATH   = "SmartShield_results/knife_v2_merged_100epochs/weights/best.pt"
+MODEL_PATH   = "C:\\Users\\ktg02\\CBNU\\3_2\\sanhak\\bodyCam\\object_detection\\SmartShield_results\\v3_merged_knife_gun_100epochs\\weights\\best.pt"
 # 분석할 동영상 경로 (각자 로컬 환경에 맞게 수정)
 VIDEO_PATH   = "C:\\Users\\ktg02\\CBNU\\3_2\\sanhak\\bodyCam\\object_detection\\contents\\video\\test1-2.mp4"
+########################################################################
+
+
 CAMERA_ID    = "demo01"                                  # 데모용 카메라 ID(임시)
 DATE_PREFIX  = datetime.now().strftime("%Y%m%d")         # S3 키 prefix용(년/월/일)
 
