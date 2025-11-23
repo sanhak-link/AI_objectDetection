@@ -7,6 +7,8 @@ import cv2
 import requests
 from ultralytics import YOLO
 
+# ======현재 파이프라인 작업 완료 ======
+
 # ====== 환경 설정 ======
 # Spring Boot 서버 주소 
 BACKEND_BASE = os.getenv("BACKEND_URL", "http://localhost:8080")  # Spring Boot 서버
