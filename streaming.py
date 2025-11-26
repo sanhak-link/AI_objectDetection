@@ -7,16 +7,66 @@ import cv2
 import requests
 from ultralytics import YOLO
 
+# 🔹 추가: 실시간 스트림용 Flask + 스레드
+from flask import Flask, Response
+import threading
+
+# ====== Flask 앱 / 전역 프레임 버퍼 ======
+app = Flask(__name__)
+
+latest_frame = None
+latest_frame_lock = threading.Lock()
+
+
+def generate_mjpeg():
+    """
+    latest_frame에 저장된 '라벨 없는 원본 프레임'을
+    MJPEG 형식으로 계속 내보내는 제너레이터
+    """
+    global latest_frame
+    while True:
+        with latest_frame_lock:
+            frame = None if latest_frame is None else latest_frame.copy()
+
+        if frame is None:
+            time.sleep(0.05)
+            continue
+
+        ret, jpeg = cv2.imencode(".jpg", frame)
+        if not ret:
+            continue
+        data = jpeg.tobytes()
+
+        # MJPEG 포맷
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n" + data + b"\r\n"
+        )
+        time.sleep(0.05)  # 너무 과도하게 보내지 않도록 약간 딜레이
+
+
+@app.route("/live")
+def live_stream():
+    return Response(
+        generate_mjpeg(),
+        mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+def start_flask_server():
+    # 로컬에서만 쓸 거라 0.0.0.0/5001 고정
+    app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
+
+
 # ====== 환경 설정 ======
 BACKEND_BASE = os.getenv("BACKEND_URL", "http://localhost:8080")
 
-# YOLO 모델 경로 (기존과 동일)
+# YOLO 모델 경로
 MODEL_PATH = (
-    "C:\\Users\\ktg02\\CBNU\\3_2\\sanhak\\bodyCam\\object_detection"
-    "\\SmartShield_results\\v3_merged_knife_gun_100epochs\\weights\\best.pt"
+    "C:\\Users\\ktg02\\CBNU\\3_2\\sanhak\\bodyCam\\object_detection\\SmartShield_results\\v3_merged_knife_gun_100epochs\\weights\\best.pt"
 )
 
-# 사용할 카메라 인덱스 (iVCam 테스트 기준)
+# 사용할 카메라 인덱스 (0: 기본 내장)
 CAM_INDEX = 1
 
 CAMERA_ID   = "live_demo_cam"
@@ -219,9 +269,9 @@ def assess_risk(history):
         for threshold, bonus in AREA_THRESHOLDS:
             if area >= threshold:
                 total_score += bonus
-            class_scores[cls] += bonus
-            reasons.append(f"area_{cls}_{area:.3f}>={threshold}+{bonus}")
-            break
+                class_scores[cls] += bonus
+                reasons.append(f"area_{cls}_{area:.3f}>={threshold}+{bonus}")
+                break
 
         if is_center_region(cx, cy):
             total_score += CENTER_BONUS
@@ -281,8 +331,12 @@ def assess_risk(history):
     }
 
 
-# ====== 메인: 라이브 카메라 + 클립 추출 ======
+# ====== 메인: 라이브 카메라 + 클립 추출 + 라이브 스트림 ======
 def run_live_camera_with_clip():
+    # 🔹 먼저 Flask 스트리밍 서버를 백그라운드에서 실행
+    flask_thread = threading.Thread(target=start_flask_server, daemon=True)
+    flask_thread.start()
+
     model = YOLO(MODEL_PATH)
     try:
         import torch
@@ -301,6 +355,7 @@ def run_live_camera_with_clip():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
 
     print(f"[INFO] 카메라 {CAM_INDEX} 연결 성공! 'q'를 누르면 종료합니다.")
+    print("[INFO] 라이브 스트림: http://localhost:5001/live")
 
     frame_idx = 0
     start_time = time.time()
@@ -325,6 +380,8 @@ def run_live_camera_with_clip():
     clip_end_t      = None
     clip_local_path = None
 
+    global latest_frame
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -334,6 +391,10 @@ def run_live_camera_with_clip():
         frame_idx += 1
         now = time.time()
         timestamp_sec = now - start_time
+
+        # 🔹 최신 "원본" 프레임을 스트림용 버퍼에 저장
+        with latest_frame_lock:
+            latest_frame = frame.copy()
 
         # ring buffer에 현재 프레임 저장
         frame_buffer.append((timestamp_sec, frame.copy()))
@@ -435,7 +496,7 @@ def run_live_camera_with_clip():
                 except Exception as e:
                     print("[ERROR] clip upload/notify failed:", e)
 
-        # 화면에 YOLO 결과 표시
+        # 화면에 YOLO 결과 표시 (이건 계속 annotated 사용)
         annotated = results[0].plot()
         cv2.namedWindow("SmartShield Live Detection", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("SmartShield Live Detection", 1280, 720)
